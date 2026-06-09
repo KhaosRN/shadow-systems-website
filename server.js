@@ -8,9 +8,7 @@ const app = express();
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 const PORT = process.env.PORT || 3000;
-
-/* ⚠️ MUST be set on Render or it will break redirects */
-const SITE_URL = process.env.SITE_URL;
+const SITE_URL = process.env.SITE_URL || `http://localhost:${PORT}`;
 
 /* =========================
    DISCORD ROLE (TEST ROLE)
@@ -29,24 +27,17 @@ const PRODUCTS = {
   "promo-wipe-scheduler-bot": { name: "Promo & Wipe List Scheduler Bot", price: 2500 },
   "invite-rewards-bot": { name: "Invite Rewards Bot", price: 1500 },
   "game-server-bot": { name: "Game Server / RCON Bot", price: 2500 },
-
-  /* TEST PACKAGE (DO NOT USE $0 IN STRIPE) */
   "test-package": { name: "TEST PACKAGE (FREE TEST)", price: 100 }
 };
 
 /* =========================
-   MIDDLEWARE
-========================= */
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
-
-/* =========================
-   STRIPE WEBHOOK (MUST BE FIRST)
+   WEBHOOK (MUST BE FIRST ROUTE)
 ========================= */
 app.post(
   "/stripe-webhook",
   express.raw({ type: "application/json" }),
   async (req, res) => {
+
     const signature = req.headers["stripe-signature"];
 
     let event;
@@ -79,6 +70,12 @@ app.post(
     res.json({ received: true });
   }
 );
+
+/* =========================
+   MIDDLEWARE (AFTER WEBHOOK)
+========================= */
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 
 /* =========================
    CREATE CHECKOUT SESSION
@@ -129,13 +126,13 @@ app.post("/create-checkout-session", async (req, res) => {
     res.json({ url: session.url });
 
   } catch (err) {
-    console.error(err);
+    console.error("Checkout error:", err);
     res.status(500).json({ error: "Checkout failed" });
   }
 });
 
 /* =========================
-   DISCORD LOG
+   DISCORD WEBHOOK LOG
 ========================= */
 async function sendDiscordPurchaseLog(session) {
   if (!process.env.DISCORD_WEBHOOK_URL) return;
