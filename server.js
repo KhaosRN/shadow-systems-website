@@ -49,9 +49,11 @@ app.post(
         process.env.STRIPE_WEBHOOK_SECRET
       );
     } catch (err) {
-      console.error("Webhook error:", err.message);
+      console.error("❌ Webhook error:", err.message);
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
+
+    console.log("🔥 WEBHOOK HIT:", event.type);
 
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
@@ -62,8 +64,9 @@ app.post(
         if (session.metadata?.discord_id) {
           await giveRole(session.metadata.discord_id);
         }
+
       } catch (err) {
-        console.error("Post-checkout error:", err);
+        console.error("❌ Post-checkout error:", err);
       }
     }
 
@@ -72,7 +75,7 @@ app.post(
 );
 
 /* =========================
-   MIDDLEWARE (AFTER WEBHOOK)
+   MIDDLEWARE
 ========================= */
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
@@ -113,10 +116,8 @@ app.post("/create-checkout-session", async (req, res) => {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items,
-
       success_url: `${SITE_URL}/success.html?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${SITE_URL}/cancel.html`,
-
       metadata: {
         discord_id: discordId,
         coupon_used: coupon || "none"
@@ -132,37 +133,61 @@ app.post("/create-checkout-session", async (req, res) => {
 });
 
 /* =========================
-   DISCORD WEBHOOK LOG
+   DISCORD WEBHOOK LOG (FIXED)
 ========================= */
 async function sendDiscordPurchaseLog(session) {
-  if (!process.env.DISCORD_WEBHOOK_URL) return;
+  try {
+    const webhook = process.env.DISCORD_WEBHOOK_URL;
 
-  const amount = ((session.amount_total || 0) / 100).toFixed(2);
+    if (!webhook) {
+      console.error("❌ Missing DISCORD_WEBHOOK_URL");
+      return;
+    }
 
-  await fetch(process.env.DISCORD_WEBHOOK_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      username: "Shadow Systems Sales",
-      embeds: [
-        {
-          title: "🛒 New Purchase",
-          color: 0x39ff14,
-          fields: [
-            {
-              name: "Discord ID",
-              value: session.metadata?.discord_id || "None"
-            },
-            {
-              name: "Total",
-              value: `$${amount}`
-            }
-          ],
-          timestamp: new Date().toISOString()
-        }
-      ]
-    })
-  });
+    const amount = session.amount_total
+      ? (session.amount_total / 100).toFixed(2)
+      : "Unknown";
+
+    console.log("📤 Sending Discord webhook...");
+
+    const res = await fetch(webhook, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: "Shadow Systems Sales",
+        embeds: [
+          {
+            title: "🛒 New Purchase",
+            color: 0x39ff14,
+            fields: [
+              {
+                name: "Discord ID",
+                value: session.metadata?.discord_id || "None"
+              },
+              {
+                name: "Total",
+                value: `$${amount}`
+              },
+              {
+                name: "Session ID",
+                value: session.id || "N/A"
+              }
+            ],
+            timestamp: new Date().toISOString()
+          }
+        ]
+      })
+    });
+
+    if (!res.ok) {
+      console.error("❌ Discord webhook failed:", await res.text());
+    } else {
+      console.log("✅ Discord message sent");
+    }
+
+  } catch (err) {
+    console.error("❌ Discord send error:", err);
+  }
 }
 
 /* =========================
@@ -183,9 +208,9 @@ async function giveRole(discordId) {
 
     await member.roles.add(TEST_ROLE_ID);
 
-    console.log("Role given");
+    console.log("✅ Role given");
   } catch (err) {
-    console.error("Role error:", err);
+    console.error("❌ Role error:", err);
   }
 }
 
