@@ -8,10 +8,12 @@ const app = express();
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 const PORT = process.env.PORT || 3000;
-const SITE_URL = process.env.SITE_URL || `http://localhost:${PORT}`;
+
+/* ⚠️ MUST be set on Render or it will break redirects */
+const SITE_URL = process.env.SITE_URL;
 
 /* =========================
-   DISCORD ROLE (YOUR TEST ROLE)
+   DISCORD ROLE (TEST ROLE)
 ========================= */
 const TEST_ROLE_ID = "1493617473704955934";
 
@@ -28,12 +30,18 @@ const PRODUCTS = {
   "invite-rewards-bot": { name: "Invite Rewards Bot", price: 1500 },
   "game-server-bot": { name: "Game Server / RCON Bot", price: 2500 },
 
-  /* ✅ TEST PACKAGE (VISIBLE ONLY WHEN ADDED IN UI) */
+  /* TEST PACKAGE (DO NOT USE $0 IN STRIPE) */
   "test-package": { name: "TEST PACKAGE (FREE TEST)", price: 100 }
 };
 
 /* =========================
-   WEBHOOK (MUST BE FIRST)
+   MIDDLEWARE
+========================= */
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
+
+/* =========================
+   STRIPE WEBHOOK (MUST BE FIRST)
 ========================= */
 app.post(
   "/stripe-webhook",
@@ -49,9 +57,9 @@ app.post(
         signature,
         process.env.STRIPE_WEBHOOK_SECRET
       );
-    } catch (error) {
-      console.error("Webhook signature failed:", error.message);
-      return res.status(400).send(`Webhook Error: ${error.message}`);
+    } catch (err) {
+      console.error("Webhook error:", err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
     if (event.type === "checkout.session.completed") {
@@ -59,9 +67,12 @@ app.post(
 
       try {
         await sendDiscordPurchaseLog(session);
-        await giveRole(session.metadata.discord_id);
+
+        if (session.metadata?.discord_id) {
+          await giveRole(session.metadata.discord_id);
+        }
       } catch (err) {
-        console.error("Webhook processing error:", err);
+        console.error("Post-checkout error:", err);
       }
     }
 
@@ -70,26 +81,14 @@ app.post(
 );
 
 /* =========================
-   MIDDLEWARE
-========================= */
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
-
-/* =========================
-   CHECKOUT SESSION
+   CREATE CHECKOUT SESSION
 ========================= */
 app.post("/create-checkout-session", async (req, res) => {
   try {
     const { cart, tosAgreed, discordId, coupon } = req.body;
 
-    if (!tosAgreed) {
-      return res.status(400).json({ error: "TOS required" });
-    }
-
-    if (!discordId) {
-      return res.status(400).json({ error: "Discord ID required" });
-    }
-
+    if (!tosAgreed) return res.status(400).json({ error: "TOS required" });
+    if (!discordId) return res.status(400).json({ error: "Discord ID required" });
     if (!Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Cart is empty" });
     }
@@ -102,33 +101,26 @@ app.post("/create-checkout-session", async (req, res) => {
 
       const quantity = Math.max(1, Number(item.quantity) || 1);
 
-      /* 🔥 FIX: Stripe cannot accept $0 */
-      const unitAmount = item.id === "test-package" ? 100 : product.price;
-
       line_items.push({
         price_data: {
           currency: "usd",
           product_data: {
             name: product.name
           },
-          unit_amount: unitAmount
+          unit_amount: product.price
         },
         quantity
       });
     }
 
-    const cartSummary = cart
-      .filter(i => PRODUCTS[i.id])
-      .map(i => `${PRODUCTS[i.id].name} x${i.quantity || 1}`)
-      .join(", ");
-
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items,
+
       success_url: `${SITE_URL}/success.html?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${SITE_URL}/cancel.html`,
+
       metadata: {
-        cart_summary: cartSummary,
         discord_id: discordId,
         coupon_used: coupon || "none"
       }
@@ -137,7 +129,7 @@ app.post("/create-checkout-session", async (req, res) => {
     res.json({ url: session.url });
 
   } catch (err) {
-    console.error("Checkout error:", err);
+    console.error(err);
     res.status(500).json({ error: "Checkout failed" });
   }
 });
@@ -150,53 +142,34 @@ async function sendDiscordPurchaseLog(session) {
 
   const amount = ((session.amount_total || 0) / 100).toFixed(2);
 
-  const payload = {
-    username: "Shadow Systems Sales",
-    embeds: [
-      {
-        title: "🛒 New Purchase",
-        color: 0x39ff14,
-        fields: [
-          {
-            name: "Email",
-            value: session.customer_details?.email || "Unknown",
-            inline: false
-          },
-          {
-            name: "Discord ID",
-            value: session.metadata?.discord_id || "None",
-            inline: false
-          },
-          {
-            name: "Items",
-            value: session.metadata?.cart_summary || "None",
-            inline: false
-          },
-          {
-            name: "Coupon",
-            value: session.metadata?.coupon_used || "None",
-            inline: true
-          },
-          {
-            name: "Total",
-            value: `$${amount}`,
-            inline: true
-          }
-        ],
-        timestamp: new Date().toISOString()
-      }
-    ]
-  };
-
   await fetch(process.env.DISCORD_WEBHOOK_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    body: JSON.stringify({
+      username: "Shadow Systems Sales",
+      embeds: [
+        {
+          title: "🛒 New Purchase",
+          color: 0x39ff14,
+          fields: [
+            {
+              name: "Discord ID",
+              value: session.metadata?.discord_id || "None"
+            },
+            {
+              name: "Total",
+              value: `$${amount}`
+            }
+          ],
+          timestamp: new Date().toISOString()
+        }
+      ]
+    })
   });
 }
 
 /* =========================
-   GIVE ROLE AFTER PURCHASE
+   GIVE ROLE (OPTIONAL)
 ========================= */
 async function giveRole(discordId) {
   try {
@@ -213,9 +186,9 @@ async function giveRole(discordId) {
 
     await member.roles.add(TEST_ROLE_ID);
 
-    console.log("Role assigned successfully");
+    console.log("Role given");
   } catch (err) {
-    console.error("Role assignment failed:", err);
+    console.error("Role error:", err);
   }
 }
 
