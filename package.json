@@ -1,0 +1,14 @@
+{
+  "name": "shadow-systems-website",
+  "version": "1.0.0",
+  "description": "Shadow Systems website with Stripe checkout and Discord sales logs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.0.0",
+    "express": "^5.0.0",
+    "stripe": "^18.0.0"
+  }
+}
