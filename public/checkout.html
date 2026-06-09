@@ -125,6 +125,10 @@
         <option value="promo-wipe-scheduler-bot">Promo/Wipe Scheduler - $25</option>
         <option value="invite-rewards-bot">Invite Rewards Bot - $15</option>
         <option value="game-server-bot">Game Server / RCON Bot - $25</option>
+
+        <!-- 🔥 TEST PACKAGE ADDED -->
+        <option value="test-package">TEST PACKAGE (ADMIN ONLY) - $1</option>
+
       </select>
 
       <button class="btn primary add-btn" onclick="addToCart()">
@@ -169,7 +173,8 @@ const PRODUCTS = {
   "economy-casino-bot": { name: "Economy / Casino Bot", price: 15 },
   "promo-wipe-scheduler-bot": { name: "Promo/Wipe Scheduler", price: 25 },
   "invite-rewards-bot": { name: "Invite Rewards Bot", price: 15 },
-  "game-server-bot": { name: "Game Server / RCON Bot", price: 25 }
+  "game-server-bot": { name: "Game Server / RCON Bot", price: 25 },
+  "test-package": { name: "TEST PACKAGE (ADMIN ONLY)", price: 1 }
 };
 
 let cart = [];
@@ -233,8 +238,6 @@ async function checkout() {
   const discordId = document.getElementById("discordId").value.trim();
   const coupon = document.getElementById("coupon").value.trim();
 
-  console.log("checkout clicked", { tos, discordId, cart });
-
   if (!tos) return alert("You must accept TOS");
   if (!discordId) return alert("Enter Discord ID");
   if (cart.length === 0) return alert("Cart is empty");
@@ -251,7 +254,6 @@ async function checkout() {
   });
 
   const data = await res.json();
-  console.log(data);
 
   if (data.url) {
     window.location.href = data.url;
