@@ -11,6 +11,11 @@ const PORT = process.env.PORT || 3000;
 const SITE_URL = process.env.SITE_URL || `http://localhost:${PORT}`;
 
 /* =========================
+   DISCORD ROLE (YOUR TEST ROLE)
+========================= */
+const TEST_ROLE_ID = "1493617473704955934";
+
+/* =========================
    PRODUCTS
 ========================= */
 const PRODUCTS = {
@@ -21,11 +26,14 @@ const PRODUCTS = {
   "economy-casino-bot": { name: "Economy / Casino Bot", price: 1500 },
   "promo-wipe-scheduler-bot": { name: "Promo & Wipe List Scheduler Bot", price: 2500 },
   "invite-rewards-bot": { name: "Invite Rewards Bot", price: 1500 },
-  "game-server-bot": { name: "Game Server / RCON Bot", price: 2500 }
+  "game-server-bot": { name: "Game Server / RCON Bot", price: 2500 },
+
+  /* ✅ TEST PACKAGE (VISIBLE ONLY WHEN ADDED IN UI) */
+  "test-package": { name: "TEST PACKAGE (FREE TEST)", price: 100 }
 };
 
 /* =========================
-   STRIPE WEBHOOK (MUST BE FIRST)
+   WEBHOOK (MUST BE FIRST)
 ========================= */
 app.post(
   "/stripe-webhook",
@@ -51,8 +59,9 @@ app.post(
 
       try {
         await sendDiscordPurchaseLog(session);
+        await giveRole(session.metadata.discord_id);
       } catch (err) {
-        console.error("Discord webhook error:", err);
+        console.error("Webhook processing error:", err);
       }
     }
 
@@ -61,13 +70,13 @@ app.post(
 );
 
 /* =========================
-   MIDDLEWARE (AFTER WEBHOOK)
+   MIDDLEWARE
 ========================= */
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 /* =========================
-   CREATE CHECKOUT SESSION
+   CHECKOUT SESSION
 ========================= */
 app.post("/create-checkout-session", async (req, res) => {
   try {
@@ -93,13 +102,16 @@ app.post("/create-checkout-session", async (req, res) => {
 
       const quantity = Math.max(1, Number(item.quantity) || 1);
 
+      /* 🔥 FIX: Stripe cannot accept $0 */
+      const unitAmount = item.id === "test-package" ? 100 : product.price;
+
       line_items.push({
         price_data: {
           currency: "usd",
           product_data: {
             name: product.name
           },
-          unit_amount: product.price
+          unit_amount: unitAmount
         },
         quantity
       });
@@ -117,7 +129,6 @@ app.post("/create-checkout-session", async (req, res) => {
       cancel_url: `${SITE_URL}/cancel.html`,
       metadata: {
         cart_summary: cartSummary,
-        tos_agreed: String(tosAgreed),
         discord_id: discordId,
         coupon_used: coupon || "none"
       }
@@ -132,7 +143,7 @@ app.post("/create-checkout-session", async (req, res) => {
 });
 
 /* =========================
-   DISCORD LOG WEBHOOK
+   DISCORD LOG
 ========================= */
 async function sendDiscordPurchaseLog(session) {
   if (!process.env.DISCORD_WEBHOOK_URL) return;
@@ -170,11 +181,6 @@ async function sendDiscordPurchaseLog(session) {
             name: "Total",
             value: `$${amount}`,
             inline: true
-          },
-          {
-            name: "Session ID",
-            value: session.id,
-            inline: false
           }
         ],
         timestamp: new Date().toISOString()
@@ -182,14 +188,34 @@ async function sendDiscordPurchaseLog(session) {
     ]
   };
 
-  const res = await fetch(process.env.DISCORD_WEBHOOK_URL, {
+  await fetch(process.env.DISCORD_WEBHOOK_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
+}
 
-  if (!res.ok) {
-    console.error("Discord log failed:", await res.text());
+/* =========================
+   GIVE ROLE AFTER PURCHASE
+========================= */
+async function giveRole(discordId) {
+  try {
+    const { Client, GatewayIntentBits } = require("discord.js");
+
+    const client = new Client({
+      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
+    });
+
+    await client.login(process.env.DISCORD_BOT_TOKEN);
+
+    const guild = await client.guilds.fetch(process.env.GUILD_ID);
+    const member = await guild.members.fetch(discordId);
+
+    await member.roles.add(TEST_ROLE_ID);
+
+    console.log("Role assigned successfully");
+  } catch (err) {
+    console.error("Role assignment failed:", err);
   }
 }
 
