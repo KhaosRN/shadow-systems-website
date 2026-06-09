@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Checkout | Shadow Systems</title>
+
+  <link rel="stylesheet" href="style.css" />
+
+  <style>
+    .cart-container {
+      width: 100%;
+      max-width: 1000px;
+      margin: auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 25px;
+    }
+
+    .cart-box {
+      background: rgba(10,10,10,.88);
+      border: 1px solid rgba(138,43,226,.4);
+      border-radius: 18px;
+      padding: 25px;
+    }
+
+    .cart-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      color: white;
+    }
+
+    .cart-item button {
+      background: transparent;
+      border: 1px solid #ff4d4d;
+      color: #ff4d4d;
+      padding: 5px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .add-btn {
+      margin-top: 10px;
+      width: 100%;
+    }
+
+    .total {
+      font-size: 26px;
+      color: var(--green);
+      margin-top: 15px;
+      font-weight: bold;
+    }
+
+    .tos {
+      margin-top: 15px;
+      color: white;
+      font-size: 14px;
+    }
+
+    .pay-btn {
+      width: 100%;
+      margin-top: 15px;
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    .pay-btn.enabled {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    select, input {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      border-radius: 8px;
+      background: #111;
+      color: white;
+      border: 1px solid #333;
+    }
+
+    @media(max-width: 900px) {
+      .cart-container {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+<main class="page-screen">
+
+  <nav class="top-nav">
+    <a href="index.html">Home</a>
+    <a href="premade-bots.html">Premade Bots</a>
+    <a href="custom-bots.html">Custom Bots</a>
+    <a href="install.html">Installation Guide</a>
+    <a href="portfolio.html">Portfolio</a>
+    <a href="checkout.html">Checkout</a>
+    <a href="https://discord.gg/snf9qxxp6" target="_blank">Join Discord</a>
+  </nav>
+
+  <section class="page-header">
+    <h1>Checkout</h1>
+    <p>Select your bots and complete checkout with Stripe.</p>
+  </section>
+
+  <section class="cart-container">
+
+    <!-- LEFT -->
+    <div class="cart-box">
+      <h2>Available Bots</h2>
+
+      <select id="productSelect">
+        <option value="ticket-bot">Ticket Bot - $15</option>
+        <option value="moderation-bot">Moderation Bot - $20</option>
+        <option value="giveaway-bot">Giveaway Bot - $10</option>
+        <option value="review-bot">Review Bot - $10</option>
+        <option value="economy-casino-bot">Economy / Casino Bot - $15</option>
+        <option value="promo-wipe-scheduler-bot">Promo/Wipe Scheduler - $25</option>
+        <option value="invite-rewards-bot">Invite Rewards Bot - $15</option>
+        <option value="game-server-bot">Game Server / RCON Bot - $25</option>
+      </select>
+
+      <button class="btn primary add-btn" onclick="addToCart()">
+        Add To Cart
+      </button>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="cart-box">
+      <h2>Your Cart</h2>
+
+      <div id="cart"></div>
+
+      <div class="total" id="total">$0</div>
+
+      <input id="discordId" type="text" placeholder="Enter your Discord ID (required)" />
+      <input id="coupon" type="text" placeholder="Coupon Code (optional)" />
+
+      <div class="tos">
+        <label>
+          <input type="checkbox" id="tosBox">
+          I agree to the <a href="tos.html" target="_blank">Terms of Service</a>
+        </label>
+      </div>
+
+      <button class="btn primary pay-btn" id="payBtn" onclick="checkout()">
+        Pay with Stripe
+      </button>
+    </div>
+
+  </section>
+
+</main>
+
+<script>
+
+const PRODUCTS = {
+  "ticket-bot": { name: "Ticket Bot", price: 15 },
+  "moderation-bot": { name: "Moderation Bot", price: 20 },
+  "giveaway-bot": { name: "Giveaway Bot", price: 10 },
+  "review-bot": { name: "Review Bot", price: 10 },
+  "economy-casino-bot": { name: "Economy / Casino Bot", price: 15 },
+  "promo-wipe-scheduler-bot": { name: "Promo/Wipe Scheduler", price: 25 },
+  "invite-rewards-bot": { name: "Invite Rewards Bot", price: 15 },
+  "game-server-bot": { name: "Game Server / RCON Bot", price: 25 }
+};
+
+let cart = [];
+
+function addToCart() {
+  const id = document.getElementById("productSelect").value;
+
+  const existing = cart.find(i => i.id === id);
+
+  if (existing) existing.quantity++;
+  else cart.push({ id, quantity: 1 });
+
+  renderCart();
+}
+
+function removeItem(id) {
+  cart = cart.filter(i => i.id !== id);
+  renderCart();
+}
+
+function renderCart() {
+  const cartDiv = document.getElementById("cart");
+  cartDiv.innerHTML = "";
+
+  let total = 0;
+
+  cart.forEach(item => {
+    const product = PRODUCTS[item.id];
+    const itemTotal = product.price * item.quantity;
+    total += itemTotal;
+
+    cartDiv.innerHTML += `
+      <div class="cart-item">
+        <span>${product.name} x${item.quantity}</span>
+        <span>$${itemTotal}</span>
+        <button onclick="removeItem('${item.id}')">Remove</button>
+      </div>
+    `;
+  });
+
+  document.getElementById("total").innerText = "$" + total;
+}
+
+document.getElementById("tosBox").addEventListener("change", updateState);
+document.getElementById("discordId").addEventListener("input", updateState);
+
+function updateState() {
+  const tos = document.getElementById("tosBox").checked;
+  const id = document.getElementById("discordId").value.trim();
+  const btn = document.getElementById("payBtn");
+
+  if (tos && id && cart.length > 0) {
+    btn.classList.add("enabled");
+  } else {
+    btn.classList.remove("enabled");
+  }
+}
+
+async function checkout() {
+  const tos = document.getElementById("tosBox").checked;
+  const discordId = document.getElementById("discordId").value.trim();
+  const coupon = document.getElementById("coupon").value.trim();
+
+  console.log("checkout clicked", { tos, discordId, cart });
+
+  if (!tos) return alert("You must accept TOS");
+  if (!discordId) return alert("Enter Discord ID");
+  if (cart.length === 0) return alert("Cart is empty");
+
+  const res = await fetch("/create-checkout-session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      cart,
+      tosAgreed: true,
+      discordId,
+      coupon
+    })
+  });
+
+  const data = await res.json();
+  console.log(data);
+
+  if (data.url) {
+    window.location.href = data.url;
+  } else {
+    alert(data.error || "Checkout failed");
+  }
+}
+
+</script>
+
+</body>
+</html>
